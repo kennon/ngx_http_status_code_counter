@@ -35,7 +35,7 @@ Installation
 ============
 
 1. Download this module or clone it.
-1. Get the nginx source code from [nginx.net](http://nginx.net/). I've only used this module so far with 0.8.50
+1. Get the nginx source code from [wiki.nginx.org](http://wiki.nginx.net/). I've only used this module so far with 0.8.50
 
         $ wget 'http://sysoev.ru/nginx/nginx-0.8.50.tar.gz'
         $ tar -xzvf nginx-0.8.50.tar.gz
@@ -43,7 +43,7 @@ Installation
         
         # Here we assume you would install you nginx under /opt/nginx/.
         $ ./configure --prefix=/opt/nginx \
-            --add-module=/path/to/ngx-http-status-code-counter
+            --add-module=/path/to/ngx_http_status_code_counter
         
         $ make
         $ make install
