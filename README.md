@@ -3,11 +3,13 @@ Name
 
 ngx-http-status-code-counter - Nginx module to keep a count of sent HTTP status codes
 
-This is a fairly simple module for the nginx webserver that simply keeps a count of HTTP status codes. I made it to feed data to a forthcoming munin plugin so I can keep track of changes in http status code distributions.
+This is a fairly simple module for the nginx webserver that simply keeps a count of HTTP status codes. I made it to feed data to the included munin plugin so I can keep track of changes in http status code distributions.
 
 Most of the code is based on the http-stub-status module that comes with the nginx distribution.
 
 This is my first Nginx module and it is still very early. Please feel free to play around with it and/or submit patches!
+
+I've included a sample munin plugin that uses ruby and the excellent munin_plugin gem.
 
 Example Config
 ==============
