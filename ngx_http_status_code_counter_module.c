@@ -106,7 +106,7 @@ static ngx_int_t ngx_http_status_code_counter_handler(ngx_http_request_t *r)
     }
 
     size = sizeof("HTTP status code counts:\n")
-         + sizeof("XXX \n") + (j * NGX_ATOMIC_T_LEN);
+         + j * (sizeof("XXX \n") + NGX_ATOMIC_T_LEN);
 
     b = ngx_create_temp_buf(r->pool, size);
     if (b == NULL) {
