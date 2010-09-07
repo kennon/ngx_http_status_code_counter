@@ -17,7 +17,8 @@ munin_plugin do
   graph_title "NGINX HTTP Status Codes"
   graph_vlabel "number"
   graph_category "Nginx"
-
+  graph_args "-l 0"
+  
   get_stats.each do |code,count|
     send("code_#{code}").label "#{code}"
     send("code_#{code}").type "COUNTER"
