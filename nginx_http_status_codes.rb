@@ -21,7 +21,7 @@ munin_plugin do
   
   get_stats.each do |code,count|
     send("code_#{code}").label "#{code}"
-    send("code_#{code}").type "COUNTER"
+    send("code_#{code}").type "DERIVE"
   end
 
   collect do
