@@ -20,18 +20,9 @@ Example Config
         }
     }
     
-Sample Output
+Sample Output (in JSON)
 =============
-    HTTP status code counts:
-    200 1271
-    206 1
-    301 10
-    302 22
-    304 516
-    400 9
-    404 2
-    500 2
-
+    {"200":196333,"204":25244311,"302":614,"404":3,"499":396943}
 
 Installation
 ============
