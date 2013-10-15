@@ -18,8 +18,7 @@
   This is really wasteful to store such a sparse array of status code counts,
   but this will allow new status codes to be counted without having any hardcoding 
 */
-ngx_atomic_t *ngx_http_status_code_counts;//[NGX_HTTP_NUM_STATUS_CODES];
-
+ngx_atomic_t *ngx_http_status_code_counts;
 static char *ngx_http_set_status_code_counter(ngx_conf_t *cf, ngx_command_t *cmd,
                                  void *conf);
 static ngx_int_t init_worker_sharedmemory(ngx_cycle_t *cycle);
