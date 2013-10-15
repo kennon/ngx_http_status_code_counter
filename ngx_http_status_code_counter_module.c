@@ -3,24 +3,26 @@
  * Copyright (C) Kennon Ballou
  */
 
+#include <sys/ipc.h>
+#include <sys/shm.h>
 #include <ngx_config.h>
 #include <ngx_core.h>
 #include <ngx_http.h>
 
 #define NGX_HTTP_LAST_LEVEL_500  508
 #define NGX_HTTP_NUM_STATUS_CODES (NGX_HTTP_LAST_LEVEL_500 - NGX_HTTP_OK)
+#define SHMKEY 22223
+#define SHMFLAG IPC_CREAT | (S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP|S_IROTH|S_IWOTH)
 
 /* 
   This is really wasteful to store such a sparse array of status code counts,
   but this will allow new status codes to be counted without having any hardcoding 
 */
-ngx_atomic_t ngx_http_status_code_counts[NGX_HTTP_NUM_STATUS_CODES];
-
+ngx_atomic_t *ngx_http_status_code_counts;
 static char *ngx_http_set_status_code_counter(ngx_conf_t *cf, ngx_command_t *cmd,
                                  void *conf);
-
+static ngx_int_t init_worker_sharedmemory(ngx_cycle_t *cycle);
 static ngx_int_t ngx_http_status_code_counter_init(ngx_conf_t *cf);
-
 static ngx_command_t  ngx_http_status_code_counter_commands[] = {
 
     { ngx_string("show_status_code_count"),
@@ -57,7 +59,7 @@ ngx_module_t  ngx_http_status_code_counter_module = {
     NGX_HTTP_MODULE,                       /* module type */
     NULL,                                  /* init master */
     NULL,                                  /* init module */
-    NULL,                                  /* init process */
+    init_worker_sharedmemory,              /* init process */
     NULL,                                  /* init thread */
     NULL,                                  /* exit thread */
     NULL,                                  /* exit process */
@@ -69,10 +71,10 @@ ngx_module_t  ngx_http_status_code_counter_module = {
 static ngx_int_t ngx_http_status_code_counter_handler(ngx_http_request_t *r)
 {
     size_t             size;
-    ngx_int_t          rc, i, j;
+    ngx_int_t          rc, i, j, k;
     ngx_buf_t         *b;
     ngx_chain_t        out;
-
+        
     if (r->method != NGX_HTTP_GET && r->method != NGX_HTTP_HEAD) {
         return NGX_HTTP_NOT_ALLOWED;
     }
@@ -83,7 +85,7 @@ static ngx_int_t ngx_http_status_code_counter_handler(ngx_http_request_t *r)
         return rc;
     }
 
-    ngx_str_set(&r->headers_out.content_type, "text/plain");
+    ngx_str_set(&r->headers_out.content_type, "application/json");
 
     if (r->method == NGX_HTTP_HEAD) {
         r->headers_out.status = NGX_HTTP_OK;
@@ -105,8 +107,7 @@ static ngx_int_t ngx_http_status_code_counter_handler(ngx_http_request_t *r)
       }
     }
 
-    size = sizeof("HTTP status code counts:\n")
-         + j * (sizeof("XXX \n") + NGX_ATOMIC_T_LEN);
+    size = sizeof("{}") + j * (sizeof("\"XXX\":,") + NGX_ATOMIC_T_LEN);
 
     b = ngx_create_temp_buf(r->pool, size);
     if (b == NULL) {
@@ -116,16 +117,22 @@ static ngx_int_t ngx_http_status_code_counter_handler(ngx_http_request_t *r)
     out.buf = b;
     out.next = NULL;
 
-    b->last = ngx_sprintf(b->last, "HTTP status code counts:\n");
-
+    b->last = ngx_sprintf(b->last, "{");
+    k = 0;
     for(i = 0; i < NGX_HTTP_NUM_STATUS_CODES; i++ )
     {
       if(ngx_http_status_code_counts[i] > 0)
       {
-        b->last = ngx_sprintf(b->last, "%uA %uA\n", i+NGX_HTTP_OK, ngx_http_status_code_counts[i]);
+        b->last = ngx_sprintf(b->last, "\"%uA\":%uA", i+NGX_HTTP_OK, ngx_http_status_code_counts[i]);
+        if (k+1 < j) {
+          b->last = ngx_sprintf(b->last, ",");
+        }
+        k++;
       }
     }
 
+     b->last = ngx_sprintf(b->last, "}");
+    
     r->headers_out.status = NGX_HTTP_OK;
     r->headers_out.content_length_n = b->last - b->pos;
 
@@ -156,12 +163,13 @@ ngx_http_status_code_count_handler(ngx_http_request_t *r)
 {
   if( r->headers_out.status >= NGX_HTTP_OK && r->headers_out.status < NGX_HTTP_LAST_LEVEL_500)
   {
-    ngx_http_status_code_counts[r->headers_out.status - NGX_HTTP_OK]++;
+    if (NULL != (void *)ngx_http_status_code_counts) {
+      ngx_http_status_code_counts[r->headers_out.status - NGX_HTTP_OK]++;
+    } 
   }
 
   return NGX_OK;
 }
-
 
 static ngx_int_t
 ngx_http_status_code_counter_init(ngx_conf_t *cf)
@@ -169,7 +177,8 @@ ngx_http_status_code_counter_init(ngx_conf_t *cf)
     ngx_http_handler_pt        *h;
     ngx_http_core_main_conf_t  *cmcf;
     ngx_int_t i;
-
+    int shmid = -1;
+    
     cmcf = ngx_http_conf_get_module_main_conf(cf, ngx_http_core_module);
 
     h = ngx_array_push(&cmcf->phases[NGX_HTTP_LOG_PHASE].handlers);
@@ -179,12 +188,33 @@ ngx_http_status_code_counter_init(ngx_conf_t *cf)
 
     *h = ngx_http_status_code_count_handler;
 
-    for(i = 0; i < NGX_HTTP_NUM_STATUS_CODES; i++) 
-    {
-      ngx_http_status_code_counts[i] = 0;
+    shmid = shmget(SHMKEY, sizeof(ngx_atomic_t) * NGX_HTTP_NUM_STATUS_CODES, SHMFLAG);
+    if (shmid > 0) {
+      ngx_http_status_code_counts = (void *)shmat(shmid, NULL, 0);
+      if (NULL != (void *)ngx_http_status_code_counts) {
+        for(i = 0; i < NGX_HTTP_NUM_STATUS_CODES; i++) {
+          ngx_http_status_code_counts[i] = 0;
+        }
+      } else {
+        perror("ngx_http_status_code_counter_init:shmat");
+      }
+    } else { 
+      perror("ngx_http_status_code_counter_init:shmget");
     }
-
+    
     return NGX_OK;
 }
 
-
+static ngx_int_t init_worker_sharedmemory(ngx_cycle_t *cycle)
+{
+  int shmid = -1;
+  
+  shmid = shmget(SHMKEY, sizeof(ngx_atomic_t) * NGX_HTTP_NUM_STATUS_CODES, SHMFLAG);
+  if (shmid > 0) {
+    ngx_http_status_code_counts = (void *)shmat(shmid, NULL, 0);
+  } else { 
+    perror("ngx_http_status_code_counter_init");
+  }
+    
+  return NGX_OK;
+}
